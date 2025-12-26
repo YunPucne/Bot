@@ -1,4 +1,16 @@
 require("dotenv").config();
+// ===== Render Web Service PORT (BẮT BUỘC) =====
+const http = require("http");
+
+const PORT = process.env.PORT;
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Bot is running");
+}).listen(PORT, () => {
+  console.log(`🌐 Web service listening on port ${PORT}`);
+});
+// =============================================
+
 const {
   Client,
   GatewayIntentBits,
@@ -112,3 +124,4 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
