@@ -95,43 +95,52 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     // /ask (THÊM MỚI - PUBLIC)
-    if (interaction.commandName === "ask") {
-      const question = interaction.options.getString("cauhoi", true);
+   if (interaction.commandName === "ask") {
+  const question = interaction.options.getString("cauhoi", true);
 
-      // PUBLIC: ai cũng thấy
-      await interaction.deferReply();
+  await interaction.deferReply(); // public
 
-      try {
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama3-8b-8192",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Bạn là trợ lý AI thân thiện cho nhóm bạn bè. Trả lời ngắn gọn, dễ hiểu, hạn chế dài dòng.",
           },
-          body: JSON.stringify({
-            model: "llama3-8b-8192",
-            messages: [
-              {
-                role: "system",
-                content:
-                  "Bạn là trợ lý AI thân thiện cho nhóm bạn bè. Trả lời ngắn gọn, dễ hiểu, hạn chế dài dòng.",
-              },
-              { role: "user", content: question },
-            ],
-          }),
-        });
+          { role: "user", content: question },
+        ],
+      }),
+    });
 
-        const data = await res.json();
-        const answer =
-          data?.choices?.[0]?.message?.content || "❌ AI không trả lời được.";
+    const text = await res.text();
 
-        await interaction.editReply(answer);
-      } catch (err) {
-        await interaction.editReply("❌ Lỗi khi gọi AI.");
-      }
+    if (!res.ok) {
+      console.error("Groq error:", res.status, text);
+      await interaction.editReply(
+        `❌ Groq lỗi ${res.status}. Kiểm tra GROQ_API_KEY hoặc bị giới hạn.`
+      );
       return;
     }
+
+    const data = JSON.parse(text);
+    const answer = data?.choices?.[0]?.message?.content || "❌ AI không trả lời được.";
+
+    await interaction.editReply(answer);
+  } catch (err) {
+    console.error(err);
+    await interaction.editReply("❌ Lỗi khi gọi AI.");
   }
+  return;
+}
+
 
   // Buttons for /party (GIỮ NGUYÊN)
   if (interaction.isButton()) {
