@@ -95,7 +95,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // /ask (AI Groq - PUBLIC)
     if (interaction.commandName === "ask") {
-      const question = interaction.options.getString("cauhoi", true);
+      const question = interaction.options.getString("question", true);
 
       await interaction.deferReply(); // public
 
@@ -160,3 +160,4 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
