@@ -1,167 +1,84 @@
+// deploy-commands.js (Discord.js v14)
+// Chạy: node deploy-commands.js
+
 require("dotenv").config();
+const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 
-/* ================== RENDER WEB SERVICE PORT ================== */
-const http = require("http");
-const PORT = process.env.PORT || 3000;
+const TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
 
-http
-  .createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Bot is running");
-  })
-  .listen(PORT, () => console.log(`🌐 Web service listening on port ${PORT}`));
-/* ============================================================= */
+// Nếu muốn deploy nhanh trong 1 server cụ thể, set GUILD_ID trong .env
+// Nếu không set, sẽ deploy GLOBAL (cập nhật có thể lâu hơn).
+const GUILD_ID = process.env.GUILD_ID;
 
-const {
-  Client,
-  GatewayIntentBits,
-  Events,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  MessageFlags,
-} = require("discord.js");
+if (!TOKEN || !CLIENT_ID) {
+  console.error("❌ Thiếu biến môi trường DISCORD_TOKEN hoặc CLIENT_ID trong .env");
+  process.exit(1);
+}
 
-// node-fetch dynamic import (for CommonJS)
-const fetch = (...args) =>
-  import("node-fetch").then(({ default: fetch }) => fetch(...args));
+const commands = [
+  // /ping
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Kiểm tra độ trễ của bot"),
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
-});
-
-// messageId -> Set(userId)
-const partyMembers = new Map();
-// messageId -> { title, time, note }
-const partyData = new Map();
-
-function buildPartyEmbed({ title, time, note, members }) {
-  return new EmbedBuilder()
-    .setTitle("🔥 QUẨY")
-    .setDescription(`**${title}**`)
-    .setColor(0x00ff99)
-    .addFields(
-      { name: "⏰ Thời gian", value: time || "Không rõ", inline: true },
-      { name: "📝 Ghi chú", value: note || "Không có", inline: true },
-      {
-        name: `👥 Tham gia (${members.length})`,
-        value:
-          members.length > 0
-            ? members.map((id) => `<@${id}>`).join("\n")
-            : "_Chưa có ai_",
-      }
+  // /party (embed phía index.js)
+  new SlashCommandBuilder()
+    .setName("party")
+    .setDescription("Mở party / rủ mọi người tham gia")
+    .addStringOption((opt) =>
+      opt
+        .setName("title")
+        .setDescription("Tiêu đề party (tuỳ chọn)")
+        .setRequired(false)
     )
-    .setFooter({ text: "Bấm nút bên dưới để chiến / té" });
-}
+    .addStringOption((opt) =>
+      opt
+        .setName("note")
+        .setDescription("Ghi chú / nội dung thêm (tuỳ chọn)")
+        .setRequired(false)
+    ),
 
-client.once(Events.ClientReady, (c) => {
-  console.log(`✅ Logged in as ${c.user.tag}`);
-});
+  // /ask (AI)
+  new SlashCommandBuilder()
+    .setName("ask")
+    .setDescription("Hỏi AI một câu")
+    .addStringOption((opt) =>
+      opt
+        .setName("question")
+        .setDescription("Nhập câu hỏi của bạn")
+        .setRequired(true)
+    )
+    .addBooleanOption((opt) =>
+      opt
+        .setName("public")
+        .setDescription("Hiện câu trả lời cho mọi người? (mặc định: false)")
+        .setRequired(false)
+    ),
+].map((cmd) => cmd.toJSON());
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  // Slash commands
-  if (interaction.isChatInputCommand()) {
-    // /ping
-    if (interaction.commandName === "ping") {
-      return interaction.reply({ content: "🏓 Pong!", flags: MessageFlags.Ephemeral });
-    }
+const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-    // /party (GIỮ NGUYÊN)
-    if (interaction.commandName === "party") {
-      const title = interaction.options.getString("title", true);
-      const time = interaction.options.getString("time") || "";
-      const note = interaction.options.getString("note") || "";
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("party_join")
-          .setLabel("⚔️ Chiến")
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId("party_leave")
-          .setLabel("💨 Té")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      const embed = buildPartyEmbed({ title, time, note, members: [] });
-
-      await interaction.reply({ embeds: [embed], components: [row] });
-
-      const msg = await interaction.fetchReply();
-      partyMembers.set(msg.id, new Set());
-      partyData.set(msg.id, { title, time, note });
-      return;
-    }
-
-    // /ask (THÊM MỚI - PUBLIC)
-   if (interaction.commandName === "ask") {
-  const question = interaction.options.getString("cauhoi", true);
-
-  await interaction.deferReply(); // public
-
+(async () => {
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "llama3-8b-8192",
-        messages: [
-          {
-            role: "system",
-            content:
-              "Bạn là trợ lý AI thân thiện cho nhóm bạn bè. Trả lời ngắn gọn, dễ hiểu, hạn chế dài dòng.",
-          },
-          { role: "user", content: question },
-        ],
-      }),
-    });
+    console.log("🚀 Deploying slash commands...");
 
-    const text = await res.text();
-
-    if (!res.ok) {
-      console.error("Groq error:", res.status, text);
-      await interaction.editReply(
-        `❌ Groq lỗi ${res.status}. Kiểm tra GROQ_API_KEY hoặc bị giới hạn.`
-      );
-      return;
-    }
-
-    const data = JSON.parse(text);
-    const answer = data?.choices?.[0]?.message?.content || "❌ AI không trả lời được.";
-
-    await interaction.editReply(answer);
-  } catch (err) {
-    console.error(err);
-    await interaction.editReply("❌ Lỗi khi gọi AI.");
-  }
-  return;
-}
-
-
-  // Buttons for /party (GIỮ NGUYÊN)
-  if (interaction.isButton()) {
-    if (interaction.customId !== "party_join" && interaction.customId !== "party_leave") return;
-
-    const msgId = interaction.message.id;
-    if (!partyMembers.has(msgId)) partyMembers.set(msgId, new Set());
-    const set = partyMembers.get(msgId);
-
-    if (interaction.customId === "party_join") {
-      set.add(interaction.user.id);
-      await interaction.reply({ content: "⚔️ Đã chiến!", flags: MessageFlags.Ephemeral });
+    if (GUILD_ID) {
+      // GUILD deploy (nhanh, dùng để test)
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), {
+        body: commands,
+      });
+      console.log("✅ Deploy GUILD commands thành công!");
+      console.log(`   -> CLIENT_ID=${CLIENT_ID}`);
+      console.log(`   -> GUILD_ID=${GUILD_ID}`);
     } else {
-      set.delete(interaction.user.id);
-      await interaction.reply({ content: "💨 Đã té!", flags: MessageFlags.Ephemeral });
+      // GLOBAL deploy (có thể mất vài phút đến vài giờ để hiện đủ)
+      await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+      console.log("✅ Deploy GLOBAL commands thành công!");
+      console.log(`   -> CLIENT_ID=${CLIENT_ID}`);
     }
-
-    const data = partyData.get(msgId) || { title: "QUẨY", time: "", note: "" };
-    const embed = buildPartyEmbed({ ...data, members: Array.from(set) });
-    await interaction.message.edit({ embeds: [embed] });
+  } catch (err) {
+    console.error("❌ Deploy thất bại:", err);
+    process.exit(1);
   }
-});
-
-client.login(process.env.DISCORD_TOKEN);
+})();
