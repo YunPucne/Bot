@@ -57,6 +57,41 @@ function buildPartyEmbed({ title, time, note, members }) {
 client.once(Events.ClientReady, (c) => {
   console.log(`✅ Logged in as ${c.user.tag}`);
 });
+async function askGroq(question) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error("Thiếu GROQ_API_KEY");
+
+  const res = await fetch(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          { role: "system", content: "Trả lời tiếng Việt, ngắn gọn." },
+          { role: "user", content: question },
+        ],
+        temperature: 0.7,
+        max_tokens: 600,
+      }),
+    }
+  );
+
+  const raw = await res.text();
+  let data = {};
+  try { data = JSON.parse(raw); } catch {}
+
+  if (!res.ok) {
+    console.log("Groq error:", raw);
+    throw new Error("Groq API lỗi");
+  }
+
+  return data.choices[0].message.content;
+}
 
 client.on(Events.InteractionCreate, async (interaction) => {
   // Slash commands
@@ -160,4 +195,5 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
 
