@@ -13,7 +13,6 @@ if (!process.env.DISCORD_TOKEN) {
   process.exit(1);
 }
 
-// Node 18+ có sẵn fetch. Nếu Node < 18 thì phải cài node-fetch.
 if (typeof fetch !== "function") {
   console.error("❌ Môi trường thiếu fetch. Hãy dùng Node 18+.");
   process.exit(1);
@@ -24,45 +23,41 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-// ====== GROQ HELPER (DÁN PHÍA TRÊN HANDLER) ======
+// ====== GROQ HELPER ======
 async function askGroq(question) {
   const key = process.env.GROQ_API_KEY;
-  if (!key) throw new Error("Thiếu GROQ_API_KEY (Render > Environment).");
+  if (!key) throw new Error("Thiếu GROQ_API_KEY");
 
-  const url = "https://api.groq.com/openai/v1/chat/completions";
-
-  const payload = {
-    model: "llama-3.1-8b-instant",
-    messages: [
-      { role: "system", content: "Bạn là trợ lý, trả lời tiếng Việt ngắn gọn, dễ hiểu." },
-      { role: "user", content: question },
-    ],
-    temperature: 0.7,
-    max_tokens: 700,
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  const res = await fetch(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          { role: "system", content: "Trả lời tiếng Việt, ngắn gọn, dễ hiểu." },
+          { role: "user", content: question },
+        ],
+        temperature: 0.7,
+        max_tokens: 700,
+      }),
+    }
+  );
 
   const raw = await res.text();
   let data = {};
   try { data = JSON.parse(raw); } catch {}
 
   if (!res.ok) {
-    // In log để bạn biết rõ 400 là do gì
-    console.log("Groq status:", res.status);
-    console.log("Groq error body:", raw);
-    const msg = data?.error?.message || raw || `HTTP ${res.status}`;
-    throw new Error(msg);
+    console.log("Groq error:", raw);
+    throw new Error(data?.error?.message || "Groq API lỗi");
   }
 
-  return data?.choices?.[0]?.message?.content?.trim() || "Không có câu trả lời.";
+  return data.choices?.[0]?.message?.content?.trim() || "Không có câu trả lời.";
 }
 
 // ====== READY ======
@@ -70,7 +65,7 @@ client.once(Events.ClientReady, (c) => {
   console.log(`✅ Logged in as ${c.user.tag}`);
 });
 
-// ====== HANDLER SLASH COMMANDS ======
+// ====== HANDLER ======
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -82,8 +77,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // /party (embed)
     if (interaction.commandName === "party") {
-      const title = interaction.options.getString("title") || "🎉 Party Time!";
-      const note = interaction.options.getString("note") || "Ai tham gia thì vào chung vui nhé!";
+      const title =
+        interaction.options.getString("title") || "🎉 Party Time!";
+      const note =
+        interaction.options.getString("note") ||
+        "Ai tham gia thì vào chung vui nhé!";
 
       const embed = new EmbedBuilder()
         .setTitle(title)
@@ -93,17 +91,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return await interaction.reply({ embeds: [embed] });
     }
 
-    // /ask (AI Groq)
+    // /ask — MẶC ĐỊNH PUBLIC + HIỆN CẢ HỎI & ĐÁP
     if (interaction.commandName === "ask") {
-      const cauhoi = interaction.options.getString("cauhoi", true); // ✅ ĐỒNG BỘ VỚI DEPLOY
-      const isPublic = interaction.options.getBoolean("public") ?? false;
+      const cauhoi = interaction.options.getString("cauhoi", true);
 
-      // ✅ ACK ngay để không “ứng dụng không phản hồi”
-      await interaction.deferReply({ ephemeral: !isPublic });
+      // ✅ MẶC ĐỊNH PUBLIC
+      await interaction.deferReply({ ephemeral: false });
 
       const answer = await askGroq(cauhoi);
 
-      return await interaction.editReply(answer);
+      const embed = new EmbedBuilder()
+        .setTitle("🤖 AI Trả Lời")
+        .addFields(
+          { name: "❓ Câu hỏi", value: cauhoi.slice(0, 1024) },
+          { name: "✅ Trả lời", value: answer.slice(0, 1024) }
+        )
+        .setFooter({ text: `Hỏi bởi: ${interaction.user.tag}` });
+
+      return await interaction.editReply({ embeds: [embed] });
     }
   } catch (err) {
     console.error("Command error:", err);
